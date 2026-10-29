@@ -82,9 +82,15 @@ Then open <http://localhost:5173> in a browser — you should see the plain
 | Database | Supabase PostgreSQL (planned) |
 | Platform | Responsive web app            |
 
-## Docs
+## Documentation
 
-- `docs/PRD.md` — product requirements from Specification #1
-- `docs/TASKS.md` — phased task list
-- `docs/WORKSPACE_RULES.md` — repo conventions
-- `docs/OPEN_QUESTIONS.md` — unconfirmed decisions
+- [docs/PRD.md](docs/PRD.md) — product requirements from Specification #1,
+  including all 11 selected user stories and scope boundaries
+- [docs/TASKS.md](docs/TASKS.md) — phased development plan (T-01–T-32) with
+  dependencies and acceptance criteria
+- [docs/WORKSPACE_RULES.md](docs/WORKSPACE_RULES.md) — naming, branching,
+  commit, PR, and merge-validation conventions
+- [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — unconfirmed decisions
+  blocking specific tasks
+- [supabase/README.md](supabase/README.md) — database layout and credential
+  policy
