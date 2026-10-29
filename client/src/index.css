@@ -1,0 +1,21 @@
+:root {
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  color: #1a1a1a;
+  background: #fff;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+}
+
+code {
+  background: #f4f3ec;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}

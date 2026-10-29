@@ -1,0 +1,16 @@
+{
+  "name": "duedash-api",
+  "private": true,
+  "version": "0.0.0",
+  "description": "DueDash Express API (scaffold)",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.2.1"
+  }
+}
