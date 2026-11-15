@@ -41,6 +41,10 @@ check "foreign course"      403 POST /api/assignments \
   '{"title":"x","course_id":"00000000-0000-4000-8000-000000000999","due_at":"2030-01-01T00:00:00Z","estimated_minutes":30}'
 check "plan-item both refs" 400 POST /api/plan-items \
   '{"weekly_plan_id":"x","assignment_id":"a","subtask_id":"b","planned_date":"2030-01-01","planned_minutes":10}'
+check "plan bad week_start" 400 POST /api/weekly-plans '{"week_start":"not-a-date"}'
+check "plan-item bad patch" 400 PATCH /api/plan-items/00000000-0000-4000-8000-000000000001 \
+  '{"planned_minutes":-1}'
+check "missed-alert scan"   200 POST /api/alerts/generate-missed '{}'
 check "bad commitment time" 400 POST /api/commitments \
   '{"kind":"work","title":"x","starts_at":"2030-01-02T10:00:00Z","ends_at":"2030-01-02T09:00:00Z"}'
 

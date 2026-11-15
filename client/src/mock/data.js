@@ -30,3 +30,33 @@ export const fmtDate = (v) =>
 
 export const fmtDay = (dateStr) =>
   new Date((dateStr ?? '').slice(0, 10) + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+
+export const fmtTime = (v) =>
+  new Date(v).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+
+// Expand commitments onto a specific YYYY-MM-DD day, including weekly
+// recurrence (recurrence_rule like "FREQ=WEEKLY;BYDAY=TU,TH"). Returns
+// [{ commitment, start, end }] with Date-times projected onto that day.
+const BYDAY = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 }
+export function commitmentsOn(commitments, dayStr) {
+  const day = new Date(dayStr + 'T12:00:00')
+  const dow = day.getDay()
+  const out = []
+  for (const c of commitments) {
+    const start = new Date(c.starts_at)
+    const end = new Date(c.ends_at)
+    const byday = /BYDAY=([A-Z,]+)/.exec(c.recurrence_rule ?? '')?.[1]?.split(',')
+    if (byday) {
+      // Weekly recurrence: matches on day-of-week, starting from starts_at.
+      if (!byday.some((b) => BYDAY[b] === dow) || day < new Date(start.toDateString())) continue
+      const s = new Date(day); s.setHours(start.getHours(), start.getMinutes(), 0, 0)
+      const e = new Date(day); e.setHours(end.getHours(), end.getMinutes(), 0, 0)
+      out.push({ ...c, start: s, end: e })
+    } else {
+      const d0 = (v) => `${v.getFullYear()}-${v.getMonth()}-${v.getDate()}`
+      if (d0(start) !== d0(day)) continue
+      out.push({ ...c, start, end })
+    }
+  }
+  return out.sort((a, b) => a.start - b.start)
+}

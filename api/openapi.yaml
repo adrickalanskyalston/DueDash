@@ -282,6 +282,31 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/WeeklyPlan' } }
         '502': { $ref: '#/components/responses/Upstream' }
         '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/weekly-plans:
+    post:
+      tags: [plans]
+      summary: |
+        Start a new weekly plan manually (US-06). Any existing `current`
+        plan is archived — exactly one current plan per student; history
+        is retained, never overwritten (BR-10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { week_start: "2026-11-16" }
+      responses:
+        '201':
+          description: Created plan (plan_state=current).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WeeklyPlan' }
+        '400':
+          description: Missing/malformed week_start.
+          content:
+            application/json:
+              example: { error: "week_start is required as YYYY-MM-DD" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
   /api/plan-items:
     post:
       tags: [plans]
@@ -314,6 +339,39 @@ paths:
           content:
             application/json:
               example: { error: "assignment_id does not belong to this student" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/plan-items/{id}:
+    patch:
+      tags: [plans]
+      summary: Manually edit a planned item's day and/or minutes
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { planned_date: "2026-11-14", planned_minutes: 120 }
+      responses:
+        '200':
+          description: Updated plan item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+    delete:
+      tags: [plans]
+      summary: Remove a planned item (underlying work is untouched)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: Deletion summary.
+          content:
+            application/json:
+              example: { deleted: "…id…" }
+        '404': { $ref: '#/components/responses/NotFound' }
         '502': { $ref: '#/components/responses/Upstream' }
         '503': { $ref: '#/components/responses/NotConfigured' }
 
@@ -367,6 +425,25 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/Alert' } }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/alerts/generate-missed:
+    post:
+      tags: [alerts]
+      summary: |
+        Scan for missed planned work and create `missed_plan` alerts (US-19).
+        A plan item alerts when its `planned_date` is before "today" in the
+        student's `time_zone` AND its target is incomplete. **Prototype
+        assumption:** evaluated on request (each client load), not by a
+        scheduler. Idempotent — an existing alert for a plan_item suppresses
+        duplicates, so page reloads never create repeats. Completed work
+        never alerts.
+      responses:
+        '200':
+          description: Scan summary.
+          content:
+            application/json:
+              example: { checked: 2, created: 1, student_time_zone: "America/Chicago", student_today: "2026-11-15" }
         '502': { $ref: '#/components/responses/Upstream' }
         '503': { $ref: '#/components/responses/NotConfigured' }
   /api/alerts/{id}:

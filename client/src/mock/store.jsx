@@ -20,6 +20,9 @@ export function StoreProvider({ children }) {
 
   async function loadAll() {
     try {
+      // Server-side missed-plan scan before fetching alerts (idempotent —
+      // no duplicates on reload).
+      await apiPost('/api/alerts/generate-missed').catch(() => null)
       const [me, courses, assignments, subtasks, plans, commitments, alerts] =
         await Promise.all([
           apiGet('/api/me'), apiGet('/api/courses?include_archived=true'),
@@ -105,6 +108,22 @@ export function StoreProvider({ children }) {
         subtask_id: s.subtask_id, planned_date: s.planned_date, planned_minutes: s.planned_minutes,
       })
       setData((d) => ({ ...d, planSuggestions: d.planSuggestions.filter((x) => x.id !== id) }))
+      await loadAll()
+    },
+    async createPlan(week_start) {
+      await apiPost('/api/weekly-plans', { week_start })
+      await loadAll()
+    },
+    async addPlanItem(fields) {
+      await apiPost('/api/plan-items', fields)
+      await loadAll()
+    },
+    async updatePlanItem(id, fields) {
+      await apiPatch(`/api/plan-items/${id}`, fields)
+      await loadAll()
+    },
+    async removePlanItem(id) {
+      await apiDelete(`/api/plan-items/${id}`)
       await loadAll()
     },
     declineSuggestion(id) {

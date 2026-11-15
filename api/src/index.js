@@ -337,6 +337,26 @@ app.get('/api/weekly-plans', requireDb, async (req, res) => {
   res.json(data)
 })
 
+// Create a plan manually (US-06): any existing 'current' plan is archived so
+// exactly one plan is current per student; history is never deleted (BR-10).
+app.post('/api/weekly-plans', requireDb, async (req, res) => {
+  const { week_start } = req.body ?? {}
+  if (!week_start || !/^\d{4}-\d{2}-\d{2}$/.test(week_start)) {
+    return badReq(res, 'week_start is required as YYYY-MM-DD')
+  }
+  const sid = await demoStudentId()
+  if (!sid) return noStudent(res)
+  await supabase.from('weekly_plans')
+    .update({ plan_state: 'archived', archived_at: new Date().toISOString() })
+    .eq('student_id', sid).eq('plan_state', 'current')
+  const { data, error } = await supabase
+    .from('weekly_plans')
+    .insert({ student_id: sid, week_start, plan_state: 'current' })
+    .select().single()
+  if (error) return upstream(res, error)
+  res.status(201).json(data)
+})
+
 app.post('/api/plan-items', requireDb, async (req, res) => {
   const { weekly_plan_id, assignment_id, subtask_id, planned_date, planned_minutes } = req.body ?? {}
   if (!weekly_plan_id) return badReq(res, 'weekly_plan_id is required')
@@ -372,6 +392,57 @@ app.post('/api/plan-items', requireDb, async (req, res) => {
     .select().single()
   if (error) return upstream(res, error)
   res.status(201).json(data)
+})
+
+// Ownership helper for plan items: item → plan → student.
+async function planItemOwner(planItemId) {
+  const { data } = await supabase
+    .from('plan_items')
+    .select('plan_item_id, weekly_plans!inner(student_id)')
+    .eq('plan_item_id', planItemId).maybeSingle()
+  return data ? { row: data, student_id: data.weekly_plans.student_id } : null
+}
+
+// Manually edit a planned item's day/minutes.
+app.patch('/api/plan-items/:id', requireDb, async (req, res) => {
+  const patch = {}
+  if ('planned_date' in req.body) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.planned_date)) {
+      return badReq(res, 'planned_date must be YYYY-MM-DD')
+    }
+    patch.planned_date = req.body.planned_date
+  }
+  if ('planned_minutes' in req.body) {
+    if (!Number.isFinite(Number(req.body.planned_minutes)) || Number(req.body.planned_minutes) < 0) {
+      return badReq(res, 'planned_minutes must be a number >= 0')
+    }
+    patch.planned_minutes = Number(req.body.planned_minutes)
+  }
+  if (Object.keys(patch).length === 0) return badReq(res, 'no updatable fields supplied')
+  const sid = await demoStudentId()
+  if (!sid) return noStudent(res)
+  const owned = await planItemOwner(req.params.id)
+  if (!owned || owned.student_id !== sid) {
+    return res.status(404).json({ error: 'plan item not found for this student' })
+  }
+  const { data, error } = await supabase
+    .from('plan_items').update(patch).eq('plan_item_id', req.params.id).select().single()
+  if (error) return upstream(res, error)
+  res.json(data)
+})
+
+// Manually remove a planned item (the underlying work is untouched).
+app.delete('/api/plan-items/:id', requireDb, async (req, res) => {
+  const sid = await demoStudentId()
+  if (!sid) return noStudent(res)
+  const owned = await planItemOwner(req.params.id)
+  if (!owned || owned.student_id !== sid) {
+    return res.status(404).json({ error: 'plan item not found for this student' })
+  }
+  const { error } = await supabase
+    .from('plan_items').delete().eq('plan_item_id', req.params.id)
+  if (error) return upstream(res, error)
+  res.json({ deleted: req.params.id })
 })
 
 // ------------------------------------------------------------ commitments --
@@ -414,6 +485,51 @@ app.get('/api/alerts', requireDb, async (req, res) => {
   res.json(data)
 })
 
+// Missed-plan alerts (US-19): any planned item whose day has PASSED in the
+// student's time zone and whose target is still incomplete gets a missed_plan
+// alert. PROTOTYPE ASSUMPTION: generated on request (each client load), not
+// by a scheduler — "day passed" is evaluated against students.time_zone at
+// call time. Idempotent: an existing alert for the same plan_item means no
+// duplicate is created, so reloads don't spam alerts.
+app.post('/api/alerts/generate-missed', requireDb, async (req, res) => {
+  const sid = await demoStudentId()
+  if (!sid) return noStudent(res)
+  const { data: student } = await supabase
+    .from('students').select('time_zone').eq('student_id', sid).single()
+  const tz = student?.time_zone || 'UTC'
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD in student's tz
+
+  const { data: items, error } = await supabase
+    .from('plan_items')
+    .select('plan_item_id, weekly_plan_id, assignment_id, subtask_id, planned_date, weekly_plans!inner(student_id)')
+    .eq('weekly_plans.student_id', sid)
+    .lt('planned_date', today)
+  if (error) return upstream(res, error)
+
+  const { data: existing } = await supabase
+    .from('alerts').select('plan_item_id').eq('student_id', sid).eq('alert_type', 'missed_plan')
+  const alerted = new Set((existing ?? []).map((a) => a.plan_item_id))
+
+  let created = 0
+  for (const it of items ?? []) {
+    if (alerted.has(it.plan_item_id)) continue // dedupe — reload-safe
+    // Completion check on the actual target: completed work never alerts.
+    const table = it.assignment_id ? 'assignments' : 'subtasks'
+    const col = it.assignment_id ? 'assignment_id' : 'subtask_id'
+    const { data: target } = await supabase
+      .from(table).select('progress_state, assignment_id').eq(col, it.assignment_id ?? it.subtask_id).maybeSingle()
+    if (!target || target.progress_state === 'completed') continue
+    const { error: insErr } = await supabase.from('alerts').insert({
+      student_id: sid,
+      plan_item_id: it.plan_item_id,
+      assignment_id: it.assignment_id ?? target.assignment_id ?? null,
+      alert_type: 'missed_plan',
+    })
+    if (!insErr) created++
+  }
+  res.json({ checked: items?.length ?? 0, created, student_time_zone: tz, student_today: today })
+})
+
 app.patch('/api/alerts/:id', requireDb, async (req, res) => {
   const sid = await demoStudentId()
   if (!sid) return noStudent(res)
@@ -436,8 +552,9 @@ app.patch('/api/alerts/:id', requireDb, async (req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => upstream(res, err))
 
-app.listen(PORT, () => {
-  console.log(`DueDash API listening on http://localhost:${PORT}`)
+// Localhost grading demo: bind to loopback only (US-18 local demo access).
+app.listen(PORT, '127.0.0.1', () => {
+  console.log(`DueDash API listening on http://127.0.0.1:${PORT}`)
   console.log(
     supabase
       ? `Supabase: configured (${SUPABASE_SERVICE_ROLE_KEY ? 'service role' : 'anon'} key)`
