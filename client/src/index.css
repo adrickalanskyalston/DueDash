@@ -65,3 +65,8 @@ label span { display: block; margin-bottom: 0.2rem; color: #444; }
   border: 1px dashed #999; border-radius: 8px; background: #fffdf2;
   padding: 0.7rem 1rem; margin: 0.8rem 0; font-size: 0.9rem;
 }
+
+.api-error {
+  background: #fde8e8; color: #9b1c1c; border: 1px solid #f5c6c6;
+  border-radius: 8px; padding: 10px 14px; margin: 12px 16px 0; font-size: 14px;
+}

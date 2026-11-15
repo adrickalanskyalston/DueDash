@@ -31,7 +31,7 @@ export default function Dashboard() {
   return (
     <main>
       <h1>Dashboard</h1>
-      <p className="muted">Welcome back, {data.student.display_name}. Catch up first — everything starts here.</p>
+      <p className="muted">Welcome back, {data.student?.display_name ?? 'student'}. Catch up first — everything starts here.</p>
 
       <nav className="nav-links">
         <Link to="/assignments">Assignment List</Link>

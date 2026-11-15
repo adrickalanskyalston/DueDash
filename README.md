@@ -11,7 +11,8 @@ preventing future late work is secondary.
 
 ```
 client/               React + Vite frontend (JavaScript)
-api/                  Node.js + Express API
+api/                  Node.js + Express API (openapi.yaml, README)
+tests/                smoke.sh — cURL smoke test for the API
 db/                   Prototype 2 schema + seed SQL (Level 2 spec)
 supabase/migrations/  future database migrations
 supabase/seeds/       future seed data
@@ -59,9 +60,12 @@ at a test project:
 Without these env vars the API still runs — the `/api/*` endpoints just
 return `503 supabase_not_configured`.
 
-Endpoints (read-only for now): `GET /health` · `GET /api/db/health` ·
-`GET /api/students` · `GET /api/courses` · `GET /api/assignments`
-(reads the derived-Overdue view; `?student_id=` filters).
+The browser calls **only** Express — never Supabase directly. Requests are
+scoped to a server-controlled seeded demo student (auth undecided — see
+`api/README.md` for the localhost limitation). Endpoint reference:
+[api/openapi.yaml](api/openapi.yaml) · full setup: [api/README.md](api/README.md).
+
+Smoke test (API running, DB seeded): `BASE_URL=http://localhost:3001 bash tests/smoke.sh`
 
 ## Running locally
 
@@ -86,8 +90,9 @@ curl http://localhost:3001/health
 # {"status":"ok","service":"duedash-api"}
 ```
 
-Then open <http://localhost:5173> in a browser — you should see the plain
-"DueDash" placeholder page.
+Then open <http://localhost:5173> in a browser — the Dashboard shows live
+seeded data once Supabase is configured; otherwise an error banner explains
+what's missing.
 
 ## Stack (Builder choices — not client-confirmed)
 

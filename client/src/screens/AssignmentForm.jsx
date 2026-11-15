@@ -30,7 +30,7 @@ export default function AssignmentForm() {
   )
   const [errors, setErrors] = useState({})
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
     const errs = {}
     const minutes = Number(form.estimated_minutes)
@@ -49,12 +49,16 @@ export default function AssignmentForm() {
       estimated_minutes: minutes,
       estimate_note: form.estimate_note.trim() || null,
     }
-    if (mode === 'edit') {
-      actions.updateAssignment(id, fields)
-      navigate(`/assignments/${id}`)
-    } else {
-      const newId = actions.addAssignment(fields)
-      navigate(`/assignments/${newId}`)
+    try {
+      if (mode === 'edit') {
+        await actions.updateAssignment(id, fields)
+        navigate(`/assignments/${id}`)
+      } else {
+        const newId = await actions.addAssignment(fields)
+        navigate(`/assignments/${newId}`)
+      }
+    } catch (e) {
+      setErrors({ form: `Save failed: ${e.message}` })
     }
   }
 
@@ -90,6 +94,7 @@ export default function AssignmentForm() {
           <label><span>Note (optional)</span>
             <textarea rows="2" value={form.estimate_note} onChange={(e) => setForm({ ...form, estimate_note: e.target.value })} placeholder="e.g. why the estimate might be off" />
           </label>
+          {errors.form && <div className="error">{errors.form}</div>}
           <button className="primary" type="submit">{mode === 'edit' ? 'Save changes' : 'Add assignment'}</button>
         </form>
       </div>
