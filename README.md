@@ -11,7 +11,9 @@ preventing future late work is secondary.
 
 ```
 client/               React + Vite frontend (JavaScript)
-api/                  Node.js + Express API
+api/                  Node.js + Express API (openapi.yaml, README)
+tests/                smoke.sh — cURL smoke test for the API
+db/                   Prototype 2 schema + seed SQL (Level 2 spec)
 supabase/migrations/  future database migrations
 supabase/seeds/       future seed data
 docs/                 PRD, task list, workspace rules, open questions
@@ -45,7 +47,25 @@ cp api/.env.example api/.env        # e.g. change PORT
 cp client/.env.example client/.env  # e.g. point at a different API URL
 ```
 
-Leave the `SUPABASE_*` values blank for now — the database is not wired up yet.
+### Supabase (Prototype 2)
+
+The API talks to **hosted Supabase** — no local database needed. To point it
+at a test project:
+
+1. Create a (disposable) project at <https://supabase.com>.
+2. In **SQL Editor**, run `db/01_schema.sql` then `db/02_seed.sql`.
+3. In **Project Settings → API Keys**, copy the Project URL and anon key into
+   `api/.env` (see `api/.env.example`).
+
+Without these env vars the API still runs — the `/api/*` endpoints just
+return `503 supabase_not_configured`.
+
+The browser calls **only** Express — never Supabase directly. Requests are
+scoped to a server-controlled seeded demo student (auth undecided — see
+`api/README.md` for the localhost limitation). Endpoint reference:
+[api/openapi.yaml](api/openapi.yaml) · full setup: [api/README.md](api/README.md).
+
+Smoke test (API running, DB seeded): `BASE_URL=http://localhost:3001 bash tests/smoke.sh`
 
 ## Running locally
 
@@ -70,8 +90,9 @@ curl http://localhost:3001/health
 # {"status":"ok","service":"duedash-api"}
 ```
 
-Then open <http://localhost:5173> in a browser — you should see the plain
-"DueDash" placeholder page.
+Then open <http://localhost:5173> in a browser — the Dashboard shows live
+seeded data once Supabase is configured; otherwise an error banner explains
+what's missing.
 
 ## Stack (Builder choices — not client-confirmed)
 

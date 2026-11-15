@@ -1,0 +1,651 @@
+openapi: 3.0.3
+info:
+  title: DueDash API — Prototype 2
+  version: "0.2.0"
+  description: |
+    Express API for the DueDash Prototype 2 grading demo. The browser calls
+    ONLY this API; it never talks to Supabase directly.
+
+    **Identity (localhost demo only):** authentication is an open design
+    decision, so requests are scoped server-side to ONE seeded student —
+    `DEMO_STUDENT_ID` env override, else the earliest-created student.
+    A browser-supplied student ID is never trusted. Anyone who can reach
+    this API acts as that student — acceptable for local grading only.
+servers:
+  - url: http://localhost:3001
+tags:
+  - name: system
+  - name: courses
+  - name: assignments
+  - name: subtasks
+  - name: plans
+  - name: commitments
+  - name: alerts
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Liveness check (no database required)
+      responses:
+        '200':
+          description: API is up.
+          content:
+            application/json:
+              example: { status: ok, service: duedash-api }
+  /api/db/health:
+    get:
+      tags: [system]
+      summary: Supabase reachability + schema check
+      responses:
+        '200':
+          description: Schema applied; returns seeded student count.
+          content:
+            application/json:
+              example: { status: ok, service: duedash-api, supabase: reachable, students: 3 }
+        '502':
+          description: Supabase reachable but schema missing / upstream error.
+          content:
+            application/json:
+              example: { status: schema_missing_or_unreachable, detail: "Could not find the table 'public.students'" }
+        '503':
+          $ref: '#/components/responses/NotConfigured'
+  /api/me:
+    get:
+      tags: [system]
+      summary: Server-controlled demo student identity
+      responses:
+        '200':
+          description: The seeded student all requests are scoped to.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+              example:
+                student_id: "00000000-0000-4000-8000-000000000001"
+                display_name: "Jordan Lee"
+                time_zone: "America/Chicago"
+                note: "server-controlled demo identity; auth undecided (localhost only)"
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /api/courses:
+    get:
+      tags: [courses]
+      summary: List the demo student's courses
+      parameters:
+        - name: include_archived
+          in: query
+          schema: { type: boolean, default: false }
+          description: Include archived courses (history is retained, BR-05).
+      responses:
+        '200':
+          description: Courses, newest name first.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Course' } }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/courses/{id}/archive:
+    post:
+      tags: [courses]
+      summary: Archive a course (retains history; never hard-deletes)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: Archived course row.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /api/assignments:
+    get:
+      tags: [assignments]
+      summary: |
+        List the demo student's assignments via the `assignment_display`
+        view — `display_state` is DERIVED (Overdue = past due + not completed),
+        soft-deleted rows excluded (BR-04/BR-09).
+      responses:
+        '200':
+          description: Assignments ordered by due_at.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AssignmentView' } }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+    post:
+      tags: [assignments]
+      summary: Create an assignment (BR-01: must belong to an owned course)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentInput' }
+            example:
+              title: "Essay draft — pricing strategies"
+              course_id: "00000000-0000-4000-8000-000000000013"
+              due_at: "2026-11-20T23:59:00-06:00"
+              estimated_minutes: 180
+              estimate_note: "Assumes two library sources"
+      responses:
+        '201':
+          description: Created assignment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assignment' }
+        '400':
+          description: Missing/invalid fields (empty title, bad due_at, negative estimated_minutes, missing course_id).
+          content:
+            application/json:
+              example: { error: "estimated_minutes must be a number >= 0" }
+        '403':
+          description: course_id does not belong to the demo student.
+          content:
+            application/json:
+              example: { error: "course_id does not belong to this student" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/assignments/{id}:
+    get:
+      tags: [assignments]
+      summary: Assignment detail (view row + non-deleted subtasks)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: Assignment + `subtasks[]`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssignmentDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+    patch:
+      tags: [assignments]
+      summary: |
+        Update fields and/or progress_state (completion toggle sets
+        completed_at; un-completing clears it).
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentPatch' }
+            example: { progress_state: completed }
+      responses:
+        '200':
+          description: Updated assignment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assignment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+    delete:
+      tags: [assignments]
+      summary: |
+        Selective soft deletion (BR-09/US-16). Always sets deleted_at on the
+        assignment (FKs preserved, row hidden from views).
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: mode
+          in: query
+          schema: { type: string, enum: [keep, remove], default: keep }
+          description: |
+            `keep` — linked subtasks/plan items stay as history.
+            `remove` — also soft-deletes subtasks and deletes plan items.
+      responses:
+        '200':
+          description: Deletion summary.
+          content:
+            application/json:
+              example: { deleted: "…id…", mode: keep, soft_deleted_at: "2026-11-13T…Z" }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /api/subtasks:
+    get:
+      tags: [subtasks]
+      summary: List the demo student's non-deleted subtasks (joined ownership)
+      responses:
+        '200':
+          description: Subtasks ordered by sort_order.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Subtask' } }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+    post:
+      tags: [subtasks]
+      summary: Persist accepted suggestion steps as subtasks (US-04)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubtaskBulk' }
+            example:
+              assignment_id: "00000000-0000-4000-8000-000000000024"
+              steps:
+                - { title: "Find two sources", estimated_minutes: 45 }
+                - { title: "Write first draft", estimated_minutes: 120, due_at: "2026-11-18T18:00:00Z" }
+      responses:
+        '201':
+          description: Created subtask rows (sort_order continues existing).
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Subtask' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: assignment_id not owned by the demo student.
+          content:
+            application/json:
+              example: { error: "assignment_id does not belong to this student" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/subtasks/{id}:
+    patch:
+      tags: [subtasks]
+      summary: Set subtask progress_state (completion toggle)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { progress_state: completed }
+      responses:
+        '200':
+          description: Updated subtask.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subtask' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /api/weekly-plans:
+    get:
+      tags: [plans]
+      summary: |
+        All weekly plans for the demo student incl. archived history
+        (BR-10: plans are retained, never overwritten). Each plan embeds
+        its plan_items[].
+      responses:
+        '200':
+          description: Plans newest-first with nested plan_items.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WeeklyPlan' } }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/weekly-plans:
+    post:
+      tags: [plans]
+      summary: |
+        Start a new weekly plan manually (US-06). Any existing `current`
+        plan is archived — exactly one current plan per student; history
+        is retained, never overwritten (BR-10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { week_start: "2026-11-16" }
+      responses:
+        '201':
+          description: Created plan (plan_state=current).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WeeklyPlan' }
+        '400':
+          description: Missing/malformed week_start.
+          content:
+            application/json:
+              example: { error: "week_start is required as YYYY-MM-DD" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/plan-items:
+    post:
+      tags: [plans]
+      summary: |
+        Add a plan item — exactly ONE of assignment_id/subtask_id (BR-08),
+        and the plan AND target must belong to the demo student.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanItemInput' }
+            example:
+              weekly_plan_id: "00000000-0000-4000-8000-000000000052"
+              assignment_id: "00000000-0000-4000-8000-000000000023"
+              planned_date: "2026-11-13"
+              planned_minutes: 90
+      responses:
+        '201':
+          description: Created plan item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanItem' }
+        '400':
+          description: Both/neither target refs, bad date, or negative minutes.
+          content:
+            application/json:
+              example: { error: "exactly one of assignment_id or subtask_id is required (BR-08)" }
+        '403':
+          description: Plan or target not owned by the demo student.
+          content:
+            application/json:
+              example: { error: "assignment_id does not belong to this student" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/plan-items/{id}:
+    patch:
+      tags: [plans]
+      summary: Manually edit a planned item's day and/or minutes
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { planned_date: "2026-11-14", planned_minutes: 120 }
+      responses:
+        '200':
+          description: Updated plan item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+    delete:
+      tags: [plans]
+      summary: Remove a planned item (underlying work is untouched)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: Deletion summary.
+          content:
+            application/json:
+              example: { deleted: "…id…" }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /api/commitments:
+    get:
+      tags: [commitments]
+      summary: List the demo student's commitments (busy blocks; may recur)
+      responses:
+        '200':
+          description: Commitments ordered by starts_at.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Commitment' } }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+    post:
+      tags: [commitments]
+      summary: Add a commitment (ends_at must be after starts_at, BR-06)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommitmentInput' }
+            example:
+              kind: work
+              title: "Bookstore shift"
+              starts_at: "2026-11-15T17:00:00-06:00"
+              ends_at: "2026-11-15T21:00:00-06:00"
+              recurrence_rule: "FREQ=WEEKLY;BYDAY=TU,TH"
+      responses:
+        '201':
+          description: Created commitment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Commitment' }
+        '400':
+          description: Bad kind, missing title, invalid times, or end before start.
+          content:
+            application/json:
+              example: { error: "ends_at must be after starts_at" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /api/alerts:
+    get:
+      tags: [alerts]
+      summary: List the demo student's alerts (due_soon / overdue / missed_plan)
+      responses:
+        '200':
+          description: Alerts newest-first.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Alert' } }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/alerts/generate-missed:
+    post:
+      tags: [alerts]
+      summary: |
+        Scan for missed planned work and create `missed_plan` alerts (US-19).
+        A plan item alerts when its `planned_date` is before "today" in the
+        student's `time_zone` AND its target is incomplete. **Prototype
+        assumption:** evaluated on request (each client load), not by a
+        scheduler. Idempotent — an existing alert for a plan_item suppresses
+        duplicates, so page reloads never create repeats. Completed work
+        never alerts.
+      responses:
+        '200':
+          description: Scan summary.
+          content:
+            application/json:
+              example: { checked: 2, created: 1, student_time_zone: "America/Chicago", student_today: "2026-11-15" }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+  /api/alerts/{id}:
+    patch:
+      tags: [alerts]
+      summary: Set alert_state (read / dismissed / unread)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { alert_state: read }
+      responses:
+        '200':
+          description: Updated alert.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Alert' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/Upstream' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Validation failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found, or not owned by the demo student.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: "assignment not found for this student" }
+    Upstream:
+      description: Supabase/PostgREST error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotConfigured:
+      description: SUPABASE_URL / service key not set in api/.env.
+      content:
+        application/json:
+          example: { error: supabase_not_configured, detail: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in api/.env" }
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: string } }
+    Me:
+      type: object
+      properties:
+        student_id: { type: string, format: uuid }
+        display_name: { type: string }
+        time_zone: { type: string }
+        note: { type: string }
+    Course:
+      type: object
+      properties:
+        course_id: { type: string, format: uuid }
+        student_id: { type: string, format: uuid }
+        course_name: { type: string }
+        course_number: { type: string }
+        semester: { type: string }
+        instructor_name: { type: string, nullable: true }
+        instructor_email: { type: string, nullable: true }
+        office_hours: { type: string, nullable: true }
+        is_archived: { type: boolean }
+        archived_at: { type: string, format: date-time, nullable: true }
+    Assignment:
+      type: object
+      properties:
+        assignment_id: { type: string, format: uuid }
+        course_id: { type: string, format: uuid }
+        title: { type: string }
+        due_at: { type: string, format: date-time }
+        estimated_minutes: { type: integer, minimum: 0 }
+        estimate_note: { type: string, nullable: true }
+        progress_state: { type: string, enum: [not_started, in_progress, completed] }
+        completed_at: { type: string, format: date-time, nullable: true }
+        deleted_at: { type: string, format: date-time, nullable: true }
+    AssignmentView:
+      allOf:
+        - $ref: '#/components/schemas/Assignment'
+        - type: object
+          properties:
+            student_id: { type: string, format: uuid }
+            display_state:
+              type: string
+              enum: [Not Started, In Progress, Completed, Overdue]
+              description: Derived — never stored (BR-04).
+    AssignmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/AssignmentView'
+        - type: object
+          properties:
+            subtasks: { type: array, items: { $ref: '#/components/schemas/Subtask' } }
+    AssignmentInput:
+      type: object
+      required: [title, course_id, due_at, estimated_minutes]
+      properties:
+        title: { type: string, minLength: 1 }
+        course_id: { type: string, format: uuid }
+        due_at: { type: string, format: date-time }
+        estimated_minutes: { type: number, minimum: 0 }
+        estimate_note: { type: string, nullable: true }
+    AssignmentPatch:
+      type: object
+      properties:
+        title: { type: string }
+        due_at: { type: string, format: date-time }
+        estimated_minutes: { type: number, minimum: 0 }
+        estimate_note: { type: string, nullable: true }
+        progress_state: { type: string, enum: [not_started, in_progress, completed] }
+    Subtask:
+      type: object
+      properties:
+        subtask_id: { type: string, format: uuid }
+        assignment_id: { type: string, format: uuid }
+        title: { type: string }
+        due_at: { type: string, format: date-time, nullable: true }
+        estimated_minutes: { type: integer, nullable: true, minimum: 0 }
+        progress_state: { type: string, enum: [not_started, in_progress, completed] }
+        sort_order: { type: integer }
+        completed_at: { type: string, format: date-time, nullable: true }
+    SubtaskBulk:
+      type: object
+      required: [assignment_id, steps]
+      properties:
+        assignment_id: { type: string, format: uuid }
+        steps:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [title]
+            properties:
+              title: { type: string }
+              due_at: { type: string, format: date-time, nullable: true }
+              estimated_minutes: { type: number, nullable: true, minimum: 0 }
+    WeeklyPlan:
+      type: object
+      properties:
+        weekly_plan_id: { type: string, format: uuid }
+        student_id: { type: string, format: uuid }
+        week_start: { type: string, format: date }
+        plan_state: { type: string, enum: [current, archived] }
+        created_at: { type: string, format: date-time }
+        archived_at: { type: string, format: date-time, nullable: true }
+        plan_items: { type: array, items: { $ref: '#/components/schemas/PlanItem' } }
+    PlanItem:
+      type: object
+      properties:
+        plan_item_id: { type: string, format: uuid }
+        weekly_plan_id: { type: string, format: uuid }
+        assignment_id: { type: string, format: uuid, nullable: true }
+        subtask_id: { type: string, format: uuid, nullable: true }
+        planned_date: { type: string, format: date }
+        planned_minutes: { type: integer, minimum: 0 }
+    PlanItemInput:
+      type: object
+      required: [weekly_plan_id, planned_date, planned_minutes]
+      properties:
+        weekly_plan_id: { type: string, format: uuid }
+        assignment_id: { type: string, format: uuid, nullable: true }
+        subtask_id: { type: string, format: uuid, nullable: true }
+        planned_date: { type: string, format: date }
+        planned_minutes: { type: number, minimum: 0 }
+    Commitment:
+      type: object
+      properties:
+        commitment_id: { type: string, format: uuid }
+        student_id: { type: string, format: uuid }
+        kind: { type: string, enum: [class, work, personal] }
+        title: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        recurrence_rule: { type: string, nullable: true }
+    CommitmentInput:
+      type: object
+      required: [kind, title, starts_at, ends_at]
+      properties:
+        kind: { type: string, enum: [class, work, personal] }
+        title: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        recurrence_rule: { type: string, nullable: true }
+    Alert:
+      type: object
+      properties:
+        alert_id: { type: string, format: uuid }
+        student_id: { type: string, format: uuid }
+        assignment_id: { type: string, format: uuid, nullable: true }
+        plan_item_id: { type: string, format: uuid, nullable: true }
+        alert_type: { type: string, enum: [due_soon, overdue, missed_plan] }
+        alert_state: { type: string, enum: [unread, read, dismissed] }
+        created_at: { type: string, format: date-time }
+        read_at: { type: string, format: date-time, nullable: true }

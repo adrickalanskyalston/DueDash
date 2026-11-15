@@ -1,55 +1,60 @@
 # DueDash — Open Questions
 
-Unconfirmed decisions. Nothing on this page is client-approved. Items marked
-*(spec)* come from Specification #1 (§1.3 usage contexts, §2.5 assumptions and
-decisions to confirm); items marked *(builder)* are technical questions raised
-during scaffolding.
+Unconfirmed decisions. Nothing on this page is client-approved unless marked
+resolved. Items marked *(spec)* come from Specification #1 / Level 2;
+items marked *(builder)* are technical questions raised during scaffolding.
 
-## Product / behavior questions *(spec)*
+**Updated for Level 2 spec (Nov 2026):** its §3.5 "Design decisions
+remaining open" is the current authority; items it resolves are marked below.
 
-- [ ] **Priority ties and manual reordering.** What is the exact tie-break
-      rule when two assignments share a due date, and may students manually
-      reorder items?
-- [ ] **Smaller-step suggestion generation.** How are suggested steps
-      produced, and what default steps fit different kinds of coursework?
-      Note: AI generation is **not** assumed — templates, rules, or manual
-      scaffolds are all candidate mechanisms.
-- [ ] **Overbooked-time rule.** How should estimated tasks be fitted into
-      available study blocks when there is more work than available time?
-      (Spill to later days? Warn? Reprioritize?)
-- [ ] **Progress measure.** Does the catch-up progress indicator count
-      assignments, subtasks, or estimated work hours?
-- [ ] **Reminder channel and timing.** In-app only, email, push, or a
-      combination — and how early before a deadline are reminders sent?
-- [ ] **Sign-in, persistence, privacy, device support.** What authentication
-      (if any), data persistence scope, privacy expectations, and device
-      matrix are required for v1?
+## Resolved by Level 2 spec
 
-## Platform & access *(spec §1.3 — undecided)*
+- [x] **Plan persistence model.** → **Stored.** `weekly_plans`/`plan_items`
+      are real tables; prior plans retained (`plan_state='archived'`) for
+      history (BR-08/BR-10). Implemented in `db/01_schema.sql`.
+- [x] **Overdue definition.** → **Derived**, never stored: incomplete work
+      past `due_at` (BR-04). Implemented as view `assignment_display`.
+- [x] **Supabase provisioning (this phase).** → Hosted test project
+      designated by the student; API connects via `SUPABASE_URL` +
+      `SUPABASE_ANON_KEY` env vars.
+- [x] **Historical course data.** → Courses archive
+      (`is_archived`/`archived_at`), never hard-delete (BR-03, US-12).
+- [x] **Deletion model.** → Reversible soft delete (`deleted_at`) preserving
+      FKs (BR-09, US-16).
+
+## Product / behavior questions *(still open per Level 2 §3.5)*
+
+- [ ] **Priority ties and manual reordering.** Overdue-before-upcoming is
+      approved; tie breaks and student reordering still open.
+- [ ] **Smaller-step suggestion generation.** User may request and edit;
+      mechanism (rule/template/AI) **not approved** — do not assume AI.
+- [ ] **Overbooked-time rule.** Client opposes automatic study-slot booking;
+      confirm how the plan handles more work than available time.
+- [ ] **Progress measure.** Assignments vs. subtasks vs. estimated hours —
+      unconfirmed.
+- [ ] **Reminder delivery.** Channel, timing, and dismissal policy open;
+      alerts must distinguish missed-plan from due-soon (BR-11).
+- [ ] **Sign-in, privacy, account email.** Authentication, email policy,
+      and storage isolation — unapproved (BR-12).
+- [ ] **Parent/subtask completion.** Cascading vs. independent completion —
+      open (BR-06).
+- [ ] **Recurrence exceptions.** Recurring commitments approved (US-15);
+      one-off override handling unspecified.
+
+## Platform & access *(undecided)*
 
 - [ ] Confirm the proposed responsive web app as the platform — native
       iOS/Android apps have **not** been requested.
-- [ ] Authentication method — none selected or approved.
 - [ ] Data retention policy.
-- [ ] Notification delivery mechanism (same as reminder channel above).
 - [ ] Local/offline editing — currently **not** an approved requirement.
 
 ## Technical questions *(builder)*
 
-- [ ] **Date and timezone handling.** How are due dates stored and compared —
-      date-only vs. timestamp, user's local timezone, DST edge cases? What
-      determines "overdue" and "today" for a student who travels or whose
-      deadlines are in a course timezone?
-- [ ] **Parent/subtask completion behavior.** Does completing all subtasks
-      automatically complete the parent assignment? Does completing the
-      parent cascade to its subtasks? Can a parent be marked complete while
-      suggested subtasks remain incomplete, and how does that affect the
-      progress count?
-- [ ] **Persistence model for plans.** Are weekly plans / daily checklist
-      items stored rows (`plan_items`) or computed on demand from
-      assignments, estimates, and commitments? What happens to a stored plan
-      when inputs change?
-- [ ] **Supabase provisioning.** Who owns the project, which region, and when
-      is it created? The scaffold deliberately runs without credentials.
+- [ ] **Date and timezone handling.** *Partially resolved:* `due_at` stored
+      as `timestamptz`; `Student.time_zone` column exists. Still open: which
+      timezone defines "today"/"overdue" for display, and DST edges.
+- [ ] **Row Level Security.** Tables are unprotected at the DB layer until
+      auth is chosen — anon key can read all rows. Acceptable for the
+      disposable test project; must be revisited before real data (BR-12).
 - [ ] **Demo deployment target.** Local-only walkthrough vs. a hosted
       deployment for the V1 demonstration?

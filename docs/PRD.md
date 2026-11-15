@@ -167,6 +167,13 @@ scaffold, not client-confirmed requirements.
 
 ### 7.3 Preliminary data model — proposal only
 
+> **Superseded by Level 2 spec (Nov 2026):** the authoritative logical schema
+> is now Level 2 §3.4, implemented in `db/01_schema.sql`. Notable changes from
+> this draft: plans are **stored** (not computed), Course gained
+> `course_number`/`semester`/instructor fields/archiving, Assignment uses
+> `title` + `estimate_note` + `progress_state`, and an `Alert` entity was added.
+> The table below is retained only as scaffold-stage history.
+
 **Not a finalized schema.** A starting point for Phase 1 discussion; field
 names, constraints, and whether planning output is stored or computed are all
 to be decided.
