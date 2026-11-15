@@ -12,6 +12,7 @@ preventing future late work is secondary.
 ```
 client/               React + Vite frontend (JavaScript)
 api/                  Node.js + Express API
+db/                   Prototype 2 schema + seed SQL (Level 2 spec)
 supabase/migrations/  future database migrations
 supabase/seeds/       future seed data
 docs/                 PRD, task list, workspace rules, open questions
@@ -45,7 +46,22 @@ cp api/.env.example api/.env        # e.g. change PORT
 cp client/.env.example client/.env  # e.g. point at a different API URL
 ```
 
-Leave the `SUPABASE_*` values blank for now — the database is not wired up yet.
+### Supabase (Prototype 2)
+
+The API talks to **hosted Supabase** — no local database needed. To point it
+at a test project:
+
+1. Create a (disposable) project at <https://supabase.com>.
+2. In **SQL Editor**, run `db/01_schema.sql` then `db/02_seed.sql`.
+3. In **Project Settings → API Keys**, copy the Project URL and anon key into
+   `api/.env` (see `api/.env.example`).
+
+Without these env vars the API still runs — the `/api/*` endpoints just
+return `503 supabase_not_configured`.
+
+Endpoints (read-only for now): `GET /health` · `GET /api/db/health` ·
+`GET /api/students` · `GET /api/courses` · `GET /api/assignments`
+(reads the derived-Overdue view; `?student_id=` filters).
 
 ## Running locally
 
