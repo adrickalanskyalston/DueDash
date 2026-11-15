@@ -7,8 +7,20 @@ Source: **Level 2 Specification** §3.3–§3.5 (supersedes the Level 1
 | ---- | ------- | --- |
 | `01_schema.sql` | Tables, keys, checks, ownership triggers, derived-Overdue view | 1st |
 | `02_seed.sql` | Fictional seed data in dependency order | 2nd |
+| `03_rls.sql` | RLS on all 8 tables; service-role-only access incl. the view | 3rd |
 
-Run both in the Supabase **SQL Editor** on a clean test project, in order.
+Run all three in the Supabase **SQL Editor** on a clean test project, in
+order. ⚠️ `01_schema.sql` **drops** existing DueDash tables — use a
+designated empty test project; never run it against a project with data
+you want to keep. `03_rls.sql` is idempotent and safe to re-run on an
+already-seeded project.
+
+Posture after `03_rls.sql`: RLS on all eight tables; `service_role` (the
+Express API key) has full access via `service_role_all` policies;
+`anon`/`authenticated` have nothing; `assignment_display` runs with
+`security_invoker` and is granted to `service_role` only. Per-user
+policies are deferred until authentication is decided — see
+`docs/OPEN_QUESTIONS.md`.
 
 ## Analyst entity → physical table (for the grader)
 

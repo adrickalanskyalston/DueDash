@@ -246,6 +246,13 @@ create table alerts (
 
 create index alerts_student_id_idx on alerts(student_id);
 
+-- US-19: one missed_plan alert per plan item — makes the generate-missed
+-- scan safe under concurrent calls (partial unique index; ignores rows
+-- without a plan_item).
+create unique index alerts_one_alert_per_plan_item
+    on alerts(student_id, plan_item_id)
+    where plan_item_id is not null;
+
 create or replace function alert_owner_matches()
 returns trigger language plpgsql as $$
 declare

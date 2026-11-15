@@ -89,8 +89,8 @@ insert into subtasks
      progress_state, sort_order, completed_at)
 values
     ('00000000-0000-4000-8000-000000000031',
-     '00000000-0000-4000-8000-000000000024',
-     'Outline paper sections', null, 30,
+     '00000000-0000-4000-8000-000000000022',
+     'Outline report sections', null, 30,
      'completed', 1, now() - interval '5 days'),
     ('00000000-0000-4000-8000-000000000032',
      '00000000-0000-4000-8000-000000000024',

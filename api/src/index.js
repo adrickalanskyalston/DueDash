@@ -525,6 +525,9 @@ app.post('/api/alerts/generate-missed', requireDb, async (req, res) => {
       assignment_id: it.assignment_id ?? target.assignment_id ?? null,
       alert_type: 'missed_plan',
     })
+    // 23505 = unique violation (alerts_one_alert_per_plan_item) — a
+    // concurrent scan already inserted; not a real failure.
+    if (insErr && insErr.code !== '23505') return upstream(res, insErr)
     if (!insErr) created++
   }
   res.json({ checked: items?.length ?? 0, created, student_time_zone: tz, student_today: today })
